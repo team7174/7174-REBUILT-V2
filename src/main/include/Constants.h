@@ -83,11 +83,14 @@ constexpr double kFlywheelReadyToleranceRPS = 3.0;  // ±3 RPS (~±180 RPM)
 // kP: amps per RPS of error — must be large enough to arrest a ball-impact
 //     velocity dip (typically 10–15 RPS) within one or two control loops.
 // kI: small wind-up to kill any residual steady-state error.
-constexpr double kFlywheelKS = 1.5;
-constexpr double kFlywheelKV = 1.2;  // was 0.45 — too low to hold under load
+constexpr double kFlywheelKS = 0.15;
+constexpr double kFlywheelKV = 0.22;  // trimmed from 0.25 — was still +50 RPM
 constexpr double kFlywheelKA = 0.0;
-constexpr double kFlywheelKP = 6.0;   // was 2.0 — not aggressive enough on dip
-constexpr double kFlywheelKI = 0.05;  // was 0.02
+constexpr double kFlywheelKP =
+    6.0;  // doubled from 3.0 — ball impacts cause 400-500 RPM dip, need
+          // aggressive recovery. 6.0 × 8.3 RPS error = 50A correction.
+constexpr double kFlywheelKI =
+    0.0;  // zeroed — was winding up and adding to overshoot
 
 // Flywheel must be within tolerance for this long before the feeder is allowed
 // to run. Prevents firing right as the wheel crosses the threshold.
@@ -141,22 +144,25 @@ constexpr double kDeployI = 0.0;
 constexpr double kDeployD = 0.08;
 
 // Roller speeds (RPM)
-constexpr double kRollerIntakeRPM = 5000.0;    // intaking
+constexpr double kRollerIntakeRPM = 3000.0;    // intaking
 constexpr double kRollerEjectRPM = -3000.0;    // ejecting / unjamming
-constexpr double kRollerOuttakeRPM = -4000.0;  // outtaking (deploy stays down)
+constexpr double kRollerOuttakeRPM = -3000.0;  // outtaking (deploy stays down)
 
 // Roller PID (velocity control, slot 0)
-constexpr double kRollerP = 0.05;
-constexpr double kRollerI = 0.0;
-constexpr double kRollerD = 0.12;
-constexpr double kRollerFF = 0.00012;  // kV for Neo Vortex
+constexpr double kRollerP = 0.00015;
+constexpr double kRollerI = 0.0000001;
+constexpr double kRollerD = 0.0001;
+constexpr double kRollerFF =
+    0.00177;  // FeedForwardConfig::kV() is in VOLTS per RPM (not duty cycle).
+              // Neo Vortex free speed ~6784 RPM → 12V / 6784 ≈ 0.00177 V/RPM
 
 // Unjam thresholds
 constexpr double kJamCurrentThreshold =
     60.0;  // amps — must be a true stall, not spin-up
 constexpr double kJamVelocityThreshold =
-    200.0;                              // RPM — only trigger if nearly stopped
-constexpr double kJamConfirmSec = 0.5;  // jam must persist this long
+    1500.0;  // RPM — only trigger if nearly stopped (raised to avoid false
+             // fires during spin-up)
+constexpr double kJamConfirmSec = 0.5;     // jam must persist this long
 constexpr double kUnjamDurationSec = 0.4;  // length of reverse pulse
 }  // namespace IntakeConstants
 

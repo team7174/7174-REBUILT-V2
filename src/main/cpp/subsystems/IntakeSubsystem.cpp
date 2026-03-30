@@ -54,7 +54,7 @@ void IntakeSubsystem::ConfigureMotors() {
   // ── Rollers ───────────────────────────────────────────────────────────────
   rev::spark::SparkFlexConfig rollerConfig{};
 
-  rollerConfig.SmartCurrentLimit(40, 20);
+  rollerConfig.SmartCurrentLimit(60);
   rollerConfig.SetIdleMode(rev::spark::SparkBaseConfig::IdleMode::kCoast);
   rollerConfig.VoltageCompensation(12.0);
 
@@ -197,43 +197,4 @@ void IntakeSubsystem::Periodic() {
       : m_rollerState == RollerState::kOuttaking ? "Outtaking"
       : m_rollerState == RollerState::kEjecting  ? "Ejecting"
                                                  : "Unjamming");
-
-  // ── Live PID tuning ───────────────────────────────────────────────────────
-  UpdateRollerPIDFromDashboard();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Live PID tuning (roller only)
-// ─────────────────────────────────────────────────────────────────────────────
-
-void IntakeSubsystem::UpdateRollerPIDFromDashboard() {
-  frc::SmartDashboard::SetDefaultNumber("Intake/Tune/kP", m_tunedRollerP);
-  frc::SmartDashboard::SetDefaultNumber("Intake/Tune/kI", m_tunedRollerI);
-  frc::SmartDashboard::SetDefaultNumber("Intake/Tune/kD", m_tunedRollerD);
-  frc::SmartDashboard::SetDefaultNumber("Intake/Tune/kFF", m_tunedRollerFF);
-
-  double p = frc::SmartDashboard::GetNumber("Intake/Tune/kP", m_tunedRollerP);
-  double i = frc::SmartDashboard::GetNumber("Intake/Tune/kI", m_tunedRollerI);
-  double d = frc::SmartDashboard::GetNumber("Intake/Tune/kD", m_tunedRollerD);
-  double ff =
-      frc::SmartDashboard::GetNumber("Intake/Tune/kFF", m_tunedRollerFF);
-
-  if (p == m_tunedRollerP && i == m_tunedRollerI && d == m_tunedRollerD &&
-      ff == m_tunedRollerFF) {
-    return;
-  }
-
-  m_tunedRollerP = p;
-  m_tunedRollerI = i;
-  m_tunedRollerD = d;
-  m_tunedRollerFF = ff;
-
-  rev::spark::SparkFlexConfig cfg{};
-  cfg.closedLoop.SetFeedbackSensor(rev::spark::kPrimaryEncoder)
-      .Pid(p, i, d)
-      .OutputRange(-1.0, 1.0);
-  cfg.closedLoop.feedForward.kV(ff);
-
-  m_rollerMotor.Configure(cfg, rev::ResetMode::kNoResetSafeParameters,
-                          rev::PersistMode::kNoPersistParameters);
 }

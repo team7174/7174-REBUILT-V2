@@ -77,9 +77,19 @@ class ShooterSubsystem : public frc2::SubsystemBase {
       ShooterConstants::kTopRightShooterID,
       ctre::phoenix6::CANBus{ShooterConstants::kCANivoreName}};
 
-  // Follower — mirrors leader, inverted so both wheels push ball same way
-  ctre::phoenix6::hardware::TalonFX m_flywheelFollower{
+  // Top Left — mechanically inverted vs leader
+  ctre::phoenix6::hardware::TalonFX m_flywheelTopLeft{
       ShooterConstants::kTopLeftShooterID,
+      ctre::phoenix6::CANBus{ShooterConstants::kCANivoreName}};
+
+  // Bottom Right — same side as leader, not inverted
+  ctre::phoenix6::hardware::TalonFX m_flywheelBottomRight{
+      ShooterConstants::kBottomRightShooterID,
+      ctre::phoenix6::CANBus{ShooterConstants::kCANivoreName}};
+
+  // Bottom Left — opposite side, inverted
+  ctre::phoenix6::hardware::TalonFX m_flywheelBottomLeft{
+      ShooterConstants::kBottomLeftShooterID,
       ctre::phoenix6::CANBus{ShooterConstants::kCANivoreName}};
 
   // TorqueCurrentFOC — immune to battery voltage sag, holds speed under load.

@@ -34,20 +34,27 @@ void ShooterSubsystem::ConfigureMotors() {
   cfg.Slot0.kI = ShooterConstants::kFlywheelKI;
   cfg.Slot0.kD = 0.0;
 
-  // Supply limit raised — 30A was starving TorqueCurrentFOC at steady state.
-  // 45A × 2 motors = 90A total, acceptable for a flywheel holding speed.
-  cfg.CurrentLimits.StatorCurrentLimit = 60.0_A;
+  // 4 motors share the load — drop stator limit per motor accordingly.
+  // 40A × 4 motors = 160A total, well within PDH capacity.
+  cfg.CurrentLimits.StatorCurrentLimit = 40.0_A;
   cfg.CurrentLimits.StatorCurrentLimitEnable = true;
-  cfg.CurrentLimits.SupplyCurrentLimit = 45.0_A;
+  cfg.CurrentLimits.SupplyCurrentLimit = 35.0_A;
   cfg.CurrentLimits.SupplyCurrentLimitEnable = true;
 
-  // Apply same base config to both motors
+  // Apply same base config to all four motors
   m_flywheelLeader.GetConfigurator().Apply(cfg);
-  m_flywheelFollower.GetConfigurator().Apply(cfg);
+  m_flywheelTopLeft.GetConfigurator().Apply(cfg);
+  m_flywheelBottomRight.GetConfigurator().Apply(cfg);
+  m_flywheelBottomLeft.GetConfigurator().Apply(cfg);
 
-  // Follower is mechanically inverted relative to the leader.
-  // Use Follower (not StrictFollower) as it supports WithOpposeMasterDirection.
-  m_flywheelFollower.SetControl(
+  // Top Left:    opposite side from leader → inverted
+  // Bottom Right: same side as leader     → not inverted
+  // Bottom Left:  opposite side           → inverted
+  m_flywheelTopLeft.SetControl(
+      controls::Follower{ShooterConstants::kTopRightShooterID, true});
+  m_flywheelBottomRight.SetControl(
+      controls::Follower{ShooterConstants::kTopRightShooterID, false});
+  m_flywheelBottomLeft.SetControl(
       controls::Follower{ShooterConstants::kTopRightShooterID, true});
 
   m_velocityRequest.Slot = 0;
@@ -238,11 +245,17 @@ void ShooterSubsystem::Periodic() {
   frc::SmartDashboard::PutNumber("Shooter/TargetRPS", m_targetRPS);
   frc::SmartDashboard::PutNumber("Shooter/TargetRPM", m_targetRPS * 60.0);
   frc::SmartDashboard::PutNumber(
-      "Shooter/LeaderCurrentA",
+      "Shooter/TopRightCurrentA",
       m_flywheelLeader.GetStatorCurrent().GetValueAsDouble());
   frc::SmartDashboard::PutNumber(
-      "Shooter/FollowerCurrentA",
-      m_flywheelFollower.GetStatorCurrent().GetValueAsDouble());
+      "Shooter/TopLeftCurrentA",
+      m_flywheelTopLeft.GetStatorCurrent().GetValueAsDouble());
+  frc::SmartDashboard::PutNumber(
+      "Shooter/BottomRightCurrentA",
+      m_flywheelBottomRight.GetStatorCurrent().GetValueAsDouble());
+  frc::SmartDashboard::PutNumber(
+      "Shooter/BottomLeftCurrentA",
+      m_flywheelBottomLeft.GetStatorCurrent().GetValueAsDouble());
 
   // Continuously re-send the current target to the controller every loop
   m_hoodController.SetSetpoint(

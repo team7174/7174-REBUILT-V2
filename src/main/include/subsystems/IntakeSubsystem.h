@@ -83,19 +83,10 @@ class IntakeSubsystem : public frc2::SubsystemBase {
   // Unjam timer: times the reverse-pulse duration
   frc::Timer m_unjamTimer;
 
-  // ── Live PID tuning (SmartDashboard) ──────────────────────────────────────
-  double m_tunedRollerP = IntakeConstants::kRollerP;
-  double m_tunedRollerI = IntakeConstants::kRollerI;
-  double m_tunedRollerD = IntakeConstants::kRollerD;
-  double m_tunedRollerFF = IntakeConstants::kRollerFF;
-
   // ── Private helpers ───────────────────────────────────────────────────────
   void ConfigureMotors();
 
   /** Returns true when both the current spike and velocity-stall conditions are
    * met. */
   bool IsJammed();
-
-  /** Read roller PID/FF from SmartDashboard and re-configure if any changed. */
-  void UpdateRollerPIDFromDashboard();
 };
