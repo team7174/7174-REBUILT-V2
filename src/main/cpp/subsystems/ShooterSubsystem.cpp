@@ -200,8 +200,11 @@ void ShooterSubsystem::SetRunning(bool run) {
     m_flywheelLeader.SetControl(
         m_velocityRequest.WithVelocity(units::turns_per_second_t{m_targetRPS}));
   } else {
-    m_flywheelLeader.SetControl(controls::NeutralOut{});
-    // Follower will coast automatically when leader is neutral
+    // Drop to idle speed instead of full stop — keeps the flywheel warm
+    // so spin-up to shooting speed is nearly instant on the next trigger pull.
+    m_targetRPS = ShooterConstants::kFlywheelIdleRPS;
+    m_flywheelLeader.SetControl(m_velocityRequest.WithVelocity(
+        units::turns_per_second_t{ShooterConstants::kFlywheelIdleRPS}));
   }
 }
 
@@ -221,6 +224,23 @@ bool ShooterSubsystem::IsStableAtSpeed() {
 
 double ShooterSubsystem::GetVelocityRPS() {
   return m_flywheelLeader.GetVelocity().GetValueAsDouble();
+}
+
+bool ShooterSubsystem::IsHoodAtTarget() const {
+  return std::abs(GetHoodAngleDeg() - m_targetHoodAngle) <=
+         ShooterConstants::kHoodToleranceDeg;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Brake / coast mode for field setup
+// ─────────────────────────────────────────────────────────────────────────────
+
+void ShooterSubsystem::SetHoodBrakeMode(bool brake) {
+  rev::spark::SparkFlexConfig cfg{};
+  cfg.SetIdleMode(brake ? rev::spark::SparkBaseConfig::IdleMode::kBrake
+                        : rev::spark::SparkBaseConfig::IdleMode::kCoast);
+  m_hoodMotor.Configure(cfg, rev::ResetMode::kNoResetSafeParameters,
+                        rev::PersistMode::kNoPersistParameters);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

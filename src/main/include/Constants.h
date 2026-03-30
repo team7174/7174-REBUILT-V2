@@ -71,7 +71,13 @@ constexpr double kFlywheelTargetRPS =
     60.0;  // 35.0 RPS — fallback only, interpolation map drives real shots
 
 // Robot is considered "at speed" when within this many RPS of the setpoint.
-constexpr double kFlywheelReadyToleranceRPS = 3.0;  // ±3 RPS (~±180 RPM)
+constexpr double kFlywheelReadyToleranceRPS = 1.5;  // ±1.5 RPS (~±90 RPM)
+
+// Idle speed — flywheel spins at this RPM when not actively shooting.
+// Keeps the flywheel warm so it only needs to gain ~200 RPM on trigger pull
+// instead of spinning from zero. Draws minimal current with 4 Krakens.
+constexpr double kFlywheelIdleRPM = 1800.0;
+constexpr double kFlywheelIdleRPS = kFlywheelIdleRPM / 60.0;  // 30.0 RPS
 
 // Feed-forward gains for the Kraken X60 flywheel (slot 0, leader only).
 // Using VelocityTorqueCurrentFOC — units are AMPS not volts.
@@ -94,7 +100,7 @@ constexpr double kFlywheelKI =
 
 // Flywheel must be within tolerance for this long before the feeder is allowed
 // to run. Prevents firing right as the wheel crosses the threshold.
-constexpr double kFlywheelStableSeconds = 0.15;
+constexpr double kFlywheelStableSeconds = 0.3;
 }  // namespace ShooterConstants
 
 namespace FeederConstants {

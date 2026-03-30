@@ -56,6 +56,10 @@ class IntakeSubsystem : public frc2::SubsystemBase {
   // ── Periodic (drives motor outputs and unjam logic) ───────────────────────
   void Periodic() override;
 
+  /** Set the deploy motor idle mode (brake/coast). Call with false when
+   *  disabled so the intake can be moved by hand for field setup. */
+  void SetDeployBrakeMode(bool brake);
+
  private:
   // ── Motors ────────────────────────────────────────────────────────────────
   rev::spark::SparkFlex m_deployMotor{

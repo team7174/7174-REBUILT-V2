@@ -64,10 +64,17 @@ class ShooterSubsystem : public frc2::SubsystemBase {
   bool IsAtSpeed();
   double GetVelocityRPS();
 
+  /** True when the hood is within kHoodToleranceDeg of its target angle. */
+  bool IsHoodAtTarget() const;
+
   /** True when the flywheel has been continuously at speed for at least
    *  kFlywheelStableSeconds — use this to gate the feeder so it doesn't
    *  fire right as the flywheel just crossed the threshold. */
   bool IsStableAtSpeed();
+
+  /** Set the hood motor idle mode (brake/coast). Call with false when
+   *  disabled so the hood can be moved by hand for field setup. */
+  void SetHoodBrakeMode(bool brake);
 
   void Periodic() override;
 

@@ -15,6 +15,11 @@ RobotContainer::RobotContainer() {
   // Give the vision subsystem a reference to the drivetrain so it can
   // push MegaTag1 measurements into the pose estimator each loop.
   vision.SetDrivetrain(drivetrain);
+
+  // IZone: only accumulate I-gain when heading error is within 5° (0.087 rad).
+  // Prevents windup during large turns but still kills steady-state error.
+  aimDrive.HeadingController.SetIZone(0.087);
+
   ConfigureBindings();
 }
 
@@ -40,20 +45,20 @@ void RobotContainer::ConfigureBindings() {
   aim.SetDefaultCommand(frc2::cmd::Run(
       [this] { aim.UpdatePose(drivetrain.GetState().Pose); }, {&aim}));
 
-  // Flywheel off by default — spins up only when right trigger is held.
+  // Flywheel idles at low RPM by default — keeps it warm for fast spin-up.
+  // Right trigger overrides with full shooting speed from interpolation map.
   shooter.SetDefaultCommand(
       frc2::cmd::RunOnce([this] { shooter.SetRunning(false); }, {&shooter})
           .AndThen(frc2::cmd::Idle({&shooter})));
 
-  // Intake rollers idle by default — sets idle once on boot then holds,
-  // so toggle commands from the left trigger are not immediately overwritten.
-  intake.SetDefaultCommand(frc2::cmd::RunOnce(
-                               [this] {
-                                 intake.SetRollerState(
-                                     IntakeSubsystem::RollerState::kIdle);
-                               },
-                               {&intake})
-                               .AndThen(frc2::cmd::Idle({&intake})));
+  // Intake default command — deploy chain broken, so intake stays down always.
+  // Rollers run continuously regardless of m_intakeOn.
+  intake.SetDefaultCommand(frc2::cmd::Run(
+      [this] {
+        // Deploy motor disabled (chain broken) — do not command position
+        intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+      },
+      {&intake}));
 
   // Note that X is defined as forward according to WPILib convention,
   // and Y is defined as to the left according to WPILib convention.
@@ -76,31 +81,38 @@ void RobotContainer::ConfigureBindings() {
       drivetrain.ApplyRequest([] { return swerve::requests::Idle{}; })
           .IgnoringDisable(true));
 
+  // A button: manual feed backup — runs feeder directly without taking
+  // subsystem ownership, so it cannot preempt or interrupt the right trigger
+  // shooting command group.
   joystick.A()
-      .WhileTrue(frc2::cmd::RunOnce(
-                     [this] {
-                       feeder.SetState(FeederSubsystem::FeederState::kFeeding);
-                     },
-                     {&feeder})
-                     .AndThen(frc2::cmd::Idle({&feeder})))
+      .WhileTrue(frc2::cmd::RunOnce([this] {
+                   feeder.SetState(FeederSubsystem::FeederState::kFeeding);
+                 }).AndThen(frc2::cmd::Idle()))
       .OnFalse(frc2::cmd::RunOnce(
-          [this] { feeder.SetState(FeederSubsystem::FeederState::kIdle); },
-          {&feeder}));
-  joystick.B().WhileTrue(drivetrain.ApplyRequest([this]() -> auto&& {
-    return point.WithModuleDirection(
-        frc::Rotation2d{-joystick.GetLeftY(), -joystick.GetLeftX()});
-  }));
+          [this] { feeder.SetState(FeederSubsystem::FeederState::kIdle); }));
+  joystick.B().WhileTrue(
+      drivetrain
+          .ApplyRequest([this]() -> auto&& {
+            return point.WithModuleDirection(
+                frc::Rotation2d{-joystick.GetLeftY(), -joystick.GetLeftX()});
+          })
+          .AlongWith(frc2::cmd::Run(
+              [this] {
+                intake.SetRollerState(IntakeSubsystem::RollerState::kIdle);
+              },
+              {&intake})));
 
   // Right trigger held: turn to face hub (back of robot). Drive freely while
   // rotating; brake when sticks idle and aimed. Also agitates the intake
   // up and down to help move stuck balls. Spins up the shooter while held.
+  // Rollers are OFF during shooting to avoid feeding extra balls.
+  // Feeder auto-engages once the flywheel is stable at speed.
   joystick.RightTrigger(0.3)
       .WhileTrue(
           drivetrain
               .Run([this] {
                 double lx = -joystick.GetLeftX();
                 double ly = -joystick.GetLeftY();
-                bool stickIdle = (std::abs(lx) < 0.1 && std::abs(ly) < 0.1);
 
                 frc::Rotation2d fieldTarget{aim.robotHeading + 180_deg};
                 frc::Rotation2d opPerspective =
@@ -108,59 +120,83 @@ void RobotContainer::ConfigureBindings() {
                 frc::Rotation2d adjTarget =
                     fieldTarget.RotateBy(-opPerspective);
 
-                if (stickIdle && aim.IsAimed()) {
-                  drivetrain.SetControl(brake);
-                } else {
-                  drivetrain.SetControl(aimDrive.WithVelocityX(ly * MaxSpeed)
-                                            .WithVelocityY(lx * MaxSpeed)
-                                            .WithTargetDirection(adjTarget));
-                }
+                drivetrain.SetControl(aimDrive.WithVelocityX(ly * MaxSpeed)
+                                          .WithVelocityY(lx * MaxSpeed)
+                                          .WithTargetDirection(adjTarget));
               })
               .AlongWith(frc2::cmd::Run(
-                  [this] { shooter.SetFromDistance(aim.distance.value()); },
+                  [this] {
+                    // Use interpolation map for hub shots, hardcoded for passes
+                    if (aim.IsPassingMode()) {
+                      shooter.SetHoodAngle(45.0);
+                      shooter.SetFlywheelRPM(2500.0);
+                    } else {
+                      shooter.SetFromDistance(aim.distance.value());
+                    }
+                  },
                   {&shooter}))
               .AlongWith(frc2::cmd::Run(
                   [this] {
+                    // Rollers OFF while shooting
+                    intake.SetRollerState(IntakeSubsystem::RollerState::kIdle);
+
                     // Start the agitate timer on first loop
                     if (!m_agitateTimer.IsRunning()) {
                       m_agitateTimer.Restart();
                     }
 
-                    // Oscillate deploy angle every 0.4 s (0.8 s full cycle)
+                    // Oscillate deploy angle every 0.267 s (0.533 s full cycle)
                     double elapsed = m_agitateTimer.Get().value();
-                    bool isRaised = (static_cast<int>(elapsed / 0.4) % 2) == 1;
+                    bool isRaised =
+                        (static_cast<int>(elapsed / 0.267) % 2) == 1;
 
                     double targetAngleDeg = IntakeConstants::kDeployedAngleDeg +
-                                            (isRaised ? 25.0 : 0.0);
+                                            (isRaised ? 110.0 : 0.0);
                     intake.SetTargetAngleDeg(targetAngleDeg);
                   },
-                  {&intake})))
+                  {&intake}))
+              .AlongWith(frc2::cmd::Run(
+                  [this] {
+                    // All three conditions must be met before feeding:
+                    //   1. Robot is aimed at target (within heading tolerance)
+                    //   2. Flywheel is stable at the correct speed
+                    //   3. Hood is at its target angle
+                    bool aimed = aim.IsAimed();
+                    bool atSpeed = shooter.IsStableAtSpeed();
+                    bool hoodReady = shooter.IsHoodAtTarget();
+                    frc::SmartDashboard::PutBoolean("Feed/Aimed", aimed);
+                    frc::SmartDashboard::PutBoolean("Feed/AtSpeed", atSpeed);
+                    frc::SmartDashboard::PutBoolean("Feed/HoodReady",
+                                                    hoodReady);
+                    frc::SmartDashboard::PutBoolean(
+                        "Feed/ReadyToFire", aimed && atSpeed && hoodReady);
+                    if (aimed && atSpeed && hoodReady) {
+                      feeder.SetState(FeederSubsystem::FeederState::kFeeding);
+                    } else {
+                      feeder.SetState(FeederSubsystem::FeederState::kIdle);
+                    }
+                  },
+                  {&feeder})))
       .OnFalse(frc2::cmd::RunOnce(
           [this] {
             shooter.SetRunning(false);
             shooter.SetHoodAngle(ShooterConstants::kHoodMinDegrees);
+            feeder.SetState(FeederSubsystem::FeederState::kIdle);
             m_agitateTimer.Stop();
-            // Return intake to fully deployed (down) position
-            intake.SetDeployState(IntakeSubsystem::DeployState::kDeployed);
+            // Resume intaking — rollers back on (deploy chain broken, stays
+            // down)
+            intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
           },
-          {&shooter, &intake}));
+          {&shooter, &intake, &feeder}));
 
-  // Left trigger: toggle intake rollers on/off. Deploy stays down either way.
-  // Uses WhileTrue so the command holds the subsystem while running,
-  // preventing the default command from overriding it mid-press.
-  joystick.LeftTrigger(0.3).OnTrue(
-      frc2::cmd::RunOnce(
-          [this] {
-            m_intakeRollerOn = !m_intakeRollerOn;
-            intake.SetDeployState(IntakeSubsystem::DeployState::kDeployed);
-            intake.SetRollerState(m_intakeRollerOn
-                                      ? IntakeSubsystem::RollerState::kIntaking
-                                      : IntakeSubsystem::RollerState::kIdle);
-          },
-          {&intake})
-          .AndThen(frc2::cmd::Idle({&intake})));
+  // Left trigger: rollers on (deploy chain broken — no deploy command).
+  joystick.LeftTrigger(0.3).OnTrue(frc2::cmd::RunOnce(
+      [this] {
+        intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+      },
+      {&intake}));
 
-  // Left bumper: stop intake rollers only (deploy position unchanged).
+  // Left bumper: stop rollers (deploy chain broken — no stow command).
   joystick.LeftBumper().OnTrue(frc2::cmd::RunOnce(
       [this] { intake.SetRollerState(IntakeSubsystem::RollerState::kIdle); },
       {&intake}));

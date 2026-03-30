@@ -41,8 +41,11 @@ class RobotContainer {
   swerve::requests::FieldCentricFacingAngle aimDrive =
       swerve::requests::FieldCentricFacingAngle{}
           .WithDeadband(MaxSpeed * 0.1)
+          .WithRotationalDeadband(MaxAngularRate * 0.02)
           .WithDriveRequestType(swerve::DriveRequestType::OpenLoopVoltage)
-          .WithHeadingPID(8.0, 0.0, 0.75);  // TODO: tune heading PID
+          .WithHeadingPID(
+              7.0, 0.3,
+              0.5);  // I-gain with IZone eliminates steady-state error
 
   /* Note: This must be constructed before the drivetrain, otherwise we need to
    *       define a destructor to un-register the telemetry from the drivetrain
@@ -54,8 +57,8 @@ class RobotContainer {
   // Timer used to oscillate the intake deploy angle when agitating
   frc::Timer m_agitateTimer;
 
-  // Toggle state for left trigger intake roller on/off
-  bool m_intakeRollerOn = false;
+  // Whether intake is enabled (left trigger on, left bumper off)
+  bool m_intakeOn = false;
 
  public:
   subsystems::CommandSwerveDrivetrain drivetrain{

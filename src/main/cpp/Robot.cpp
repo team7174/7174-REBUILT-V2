@@ -25,11 +25,19 @@ void Robot::RobotPeriodic() {
   frc2::CommandScheduler::GetInstance().Run();
 }
 
-void Robot::DisabledInit() {}
+void Robot::DisabledInit() {
+  // Switch to coast so operators can move the hood and intake by hand
+  m_container.intake.SetDeployBrakeMode(false);
+  m_container.shooter.SetHoodBrakeMode(false);
+}
 
 void Robot::DisabledPeriodic() {}
 
-void Robot::DisabledExit() {}
+void Robot::DisabledExit() {
+  // Re-enable brake mode before any match phase starts
+  m_container.intake.SetDeployBrakeMode(true);
+  m_container.shooter.SetHoodBrakeMode(true);
+}
 
 void Robot::AutonomousInit() {
   m_autonomousCommand = m_container.GetAutonomousCommand();

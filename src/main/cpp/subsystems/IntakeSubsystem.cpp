@@ -31,7 +31,7 @@ void IntakeSubsystem::ConfigureMotors() {
   deployConfig.SetIdleMode(rev::spark::SparkBaseConfig::IdleMode::kBrake);
   deployConfig.Inverted(false);
   deployConfig.VoltageCompensation(12.0);
-  deployConfig.ClosedLoopRampRate(0.25);
+  deployConfig.ClosedLoopRampRate(0.1);
 
   // PositionConversionFactor: encoder natively reports degrees
   deployConfig.encoder.PositionConversionFactor(
@@ -46,7 +46,7 @@ void IntakeSubsystem::ConfigureMotors() {
   deployConfig.closedLoop.SetFeedbackSensor(rev::spark::kPrimaryEncoder)
       .Pid(IntakeConstants::kDeployP, IntakeConstants::kDeployI,
            IntakeConstants::kDeployD)
-      .OutputRange(-0.3, 0.3);
+      .OutputRange(-0.6, 0.6);
 
   m_deployMotor.Configure(deployConfig, rev::ResetMode::kResetSafeParameters,
                           rev::PersistMode::kPersistParameters);
@@ -77,8 +77,9 @@ void IntakeSubsystem::SetDeployState(DeployState state) {
   m_targetAngleDeg = (state == DeployState::kStowed)
                          ? IntakeConstants::kStowedAngleDeg
                          : IntakeConstants::kDeployedAngleDeg;
-  m_deployController.SetSetpoint(
-      m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
+  // TEMPORARILY DISABLED — intake deploy chain broken
+  // m_deployController.SetSetpoint(
+  //     m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
 }
 
 void IntakeSubsystem::SetTargetAngleDeg(double angleDeg) {
@@ -86,8 +87,9 @@ void IntakeSubsystem::SetTargetAngleDeg(double angleDeg) {
   angleDeg = std::clamp(angleDeg, IntakeConstants::kDeployedAngleDeg,
                         IntakeConstants::kStowedAngleDeg);
   m_targetAngleDeg = angleDeg;
-  m_deployController.SetSetpoint(
-      m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
+  // TEMPORARILY DISABLED — intake deploy chain broken
+  // m_deployController.SetSetpoint(
+  //     m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
 }
 
 void IntakeSubsystem::SetRollerState(RollerState state) {
@@ -141,6 +143,18 @@ bool IntakeSubsystem::IsJammed() {
              IntakeConstants::kJamCurrentThreshold &&
          std::abs(m_rollerMotor.GetEncoder().GetVelocity()) <
              IntakeConstants::kJamVelocityThreshold;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Brake / coast mode for field setup
+// ─────────────────────────────────────────────────────────────────────────────
+
+void IntakeSubsystem::SetDeployBrakeMode(bool brake) {
+  rev::spark::SparkFlexConfig cfg{};
+  cfg.SetIdleMode(brake ? rev::spark::SparkBaseConfig::IdleMode::kBrake
+                        : rev::spark::SparkBaseConfig::IdleMode::kCoast);
+  m_deployMotor.Configure(cfg, rev::ResetMode::kNoResetSafeParameters,
+                          rev::PersistMode::kNoPersistParameters);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
