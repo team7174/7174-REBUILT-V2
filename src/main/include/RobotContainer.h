@@ -46,7 +46,7 @@ class RobotContainer {
           .WithRotationalDeadband(MaxAngularRate * 0.02)
           .WithDriveRequestType(swerve::DriveRequestType::OpenLoopVoltage)
           .WithHeadingPID(
-              7.0, 0.3,
+              8.0, 0.5,
               0.5);  // I-gain with IZone eliminates steady-state error
 
   /* Note: This must be constructed before the drivetrain, otherwise we need to
@@ -60,7 +60,10 @@ class RobotContainer {
   frc::Timer m_agitateTimer;
 
   // Whether intake is enabled (left trigger on, left bumper off)
-  bool m_intakeOn = false;
+  bool m_intakeOn = true;
+
+  // Manual feed override — A button forces feeder regardless of flywheel state
+  bool m_manualFeedOverride = false;
 
   // Auto chooser populated by PathPlanner — shown on
   // SmartDashboard/Shuffleboard

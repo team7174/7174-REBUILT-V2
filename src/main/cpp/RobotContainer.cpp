@@ -9,6 +9,7 @@
 #include <frc2/command/Commands.h>
 #include <frc2/command/button/RobotModeTriggers.h>
 #include <pathplanner/lib/auto/AutoBuilder.h>
+#include <pathplanner/lib/auto/NamedCommands.h>
 
 #include <cmath>
 
@@ -20,6 +21,64 @@ RobotContainer::RobotContainer() {
   // IZone: only accumulate I-gain when heading error is within 5° (0.087 rad).
   // Prevents windup during large turns but still kills steady-state error.
   aimDrive.HeadingController.SetIZone(0.087);
+
+  // ── PathPlanner named commands ───────────────────────────────────────────
+  // Must be registered BEFORE ConfigureAutoBuilder() / buildAutoChooser().
+
+  // "Intake On" — turns on intake rollers for the duration of the path event.
+  pathplanner::NamedCommands::registerCommand(
+      "Intake",
+      frc2::cmd::RunOnce([this] { m_intakeOn = true; })
+          .AndThen(frc2::cmd::RunOnce(
+              [this] {
+                intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+              },
+              {&intake})));
+
+  // "Auto Shoot" — turns to face the hub (back of robot), spins up the
+  // shooter, feeds once flywheel + hood are stable and aimed, then stops.
+  // Times out after 4 seconds so the auto path keeps moving if the shot stalls.
+  pathplanner::NamedCommands::registerCommand(
+      "AutoShoot",
+      // 1. Turn to face hub — keep translating at zero while locking heading
+      drivetrain
+          .Run([this] {
+            frc::Rotation2d fieldTarget{aim.robotHeading + 180_deg};
+            frc::Rotation2d opPerspective =
+                drivetrain.GetOperatorForwardDirection();
+            frc::Rotation2d adjTarget = fieldTarget.RotateBy(-opPerspective);
+            drivetrain.SetControl(aimDrive.WithVelocityX(0_mps)
+                                      .WithVelocityY(0_mps)
+                                      .WithTargetDirection(adjTarget));
+          })
+          // 2. Spin up flywheel + set hood from live distance
+          .AlongWith(frc2::cmd::Run(
+              [this] { shooter.SetFromDistance(aim.distance.value()); },
+              {&shooter}))
+          // 3. Feed only when aimed, at speed, and hood is ready
+          .AlongWith(frc2::cmd::Run(
+              [this] {
+                bool aimed = aim.IsAimed();
+                bool atSpeed = shooter.IsStableAtSpeed();
+                bool hoodReady = shooter.IsHoodAtTarget();
+                frc::SmartDashboard::PutBoolean("Auto/Aimed", aimed);
+                frc::SmartDashboard::PutBoolean("Auto/AtSpeed", atSpeed);
+                frc::SmartDashboard::PutBoolean("Auto/HoodReady", hoodReady);
+                if (aimed && atSpeed && hoodReady) {
+                  feeder.SetState(FeederSubsystem::FeederState::kFeeding);
+                } else {
+                  feeder.SetState(FeederSubsystem::FeederState::kIdle);
+                }
+              },
+              {&feeder}))
+          .WithTimeout(4_s)
+          .AndThen(frc2::cmd::RunOnce(
+              [this] {
+                shooter.SetRunning(false);
+                shooter.SetHoodAngle(ShooterConstants::kHoodMinDegrees);
+                feeder.SetState(FeederSubsystem::FeederState::kIdle);
+              },
+              {&shooter, &feeder})));
 
   // Configure PathPlanner AutoBuilder with this robot's swerve drivetrain.
   // Must happen before buildAutoChooser() or any PathPlannerAuto is created.
@@ -51,6 +110,17 @@ void RobotContainer::ConfigureBindings() {
     joystick.GetHID().SetRumble(frc::GenericHID::RumbleType::kBothRumble, 0.0);
   }));
 
+  // Reset shooter/feeder when teleop starts so auto-shoot state doesn't
+  // carry over from autonomous.
+  frc2::RobotModeTriggers::Teleop().OnTrue(frc2::cmd::RunOnce(
+      [this] {
+        shooter.SetRunning(false);
+        shooter.SetHoodAngle(ShooterConstants::kHoodMinDegrees);
+        feeder.SetState(FeederSubsystem::FeederState::kIdle);
+        m_intakeOn = true;
+      },
+      {&shooter, &feeder}));
+
   // Feed the aim subsystem the current robot pose every loop
   aim.SetDefaultCommand(frc2::cmd::Run(
       [this] { aim.UpdatePose(drivetrain.GetState().Pose); }, {&aim}));
@@ -62,11 +132,15 @@ void RobotContainer::ConfigureBindings() {
           .AndThen(frc2::cmd::Idle({&shooter})));
 
   // Intake default command — deploy chain broken, so intake stays down always.
-  // Rollers run continuously regardless of m_intakeOn.
+  // Rollers run based on m_intakeOn flag (controlled by left trigger / bumper).
   intake.SetDefaultCommand(frc2::cmd::Run(
       [this] {
         // Deploy motor disabled (chain broken) — do not command position
-        intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+        if (m_intakeOn) {
+          intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+        } else {
+          intake.SetRollerState(IntakeSubsystem::RollerState::kIdle);
+        }
       },
       {&intake}));
 
@@ -91,15 +165,18 @@ void RobotContainer::ConfigureBindings() {
       drivetrain.ApplyRequest([] { return swerve::requests::Idle{}; })
           .IgnoringDisable(true));
 
-  // A button: manual feed backup — runs feeder directly without taking
-  // subsystem ownership, so it cannot preempt or interrupt the right trigger
-  // shooting command group.
+  // A button: manual feed override — forces feeder on regardless of flywheel
+  // speed. Works even while right trigger is held (the RT feeder lambda checks
+  // m_manualFeedOverride). Also works standalone when RT is not held.
   joystick.A()
       .WhileTrue(frc2::cmd::RunOnce([this] {
+                   m_manualFeedOverride = true;
                    feeder.SetState(FeederSubsystem::FeederState::kFeeding);
                  }).AndThen(frc2::cmd::Idle()))
-      .OnFalse(frc2::cmd::RunOnce(
-          [this] { feeder.SetState(FeederSubsystem::FeederState::kIdle); }));
+      .OnFalse(frc2::cmd::RunOnce([this] {
+        m_manualFeedOverride = false;
+        feeder.SetState(FeederSubsystem::FeederState::kIdle);
+      }));
   joystick.B().WhileTrue(
       drivetrain
           .ApplyRequest([this]() -> auto&& {
@@ -171,16 +248,21 @@ void RobotContainer::ConfigureBindings() {
                     //   1. Robot is aimed at target (within heading tolerance)
                     //   2. Flywheel is stable at the correct speed
                     //   3. Hood is at its target angle
+                    // OR: A-button manual override forces feeding immediately.
                     bool aimed = aim.IsAimed();
                     bool atSpeed = shooter.IsStableAtSpeed();
                     bool hoodReady = shooter.IsHoodAtTarget();
+                    bool manualOverride = m_manualFeedOverride;
                     frc::SmartDashboard::PutBoolean("Feed/Aimed", aimed);
                     frc::SmartDashboard::PutBoolean("Feed/AtSpeed", atSpeed);
                     frc::SmartDashboard::PutBoolean("Feed/HoodReady",
                                                     hoodReady);
+                    frc::SmartDashboard::PutBoolean("Feed/ManualOverride",
+                                                    manualOverride);
                     frc::SmartDashboard::PutBoolean(
-                        "Feed/ReadyToFire", aimed && atSpeed && hoodReady);
-                    if (aimed && atSpeed && hoodReady) {
+                        "Feed/ReadyToFire",
+                        manualOverride || (aimed && atSpeed && hoodReady));
+                    if (manualOverride || (aimed && atSpeed && hoodReady)) {
                       feeder.SetState(FeederSubsystem::FeederState::kFeeding);
                     } else {
                       feeder.SetState(FeederSubsystem::FeederState::kIdle);
@@ -192,24 +274,23 @@ void RobotContainer::ConfigureBindings() {
             shooter.SetRunning(false);
             shooter.SetHoodAngle(ShooterConstants::kHoodMinDegrees);
             feeder.SetState(FeederSubsystem::FeederState::kIdle);
+            m_manualFeedOverride = false;
             m_agitateTimer.Stop();
             // Resume intaking — rollers back on (deploy chain broken, stays
             // down)
+            m_intakeOn = true;
             intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
           },
           {&shooter, &intake, &feeder}));
 
-  // Left trigger: rollers on (deploy chain broken — no deploy command).
-  joystick.LeftTrigger(0.3).OnTrue(frc2::cmd::RunOnce(
-      [this] {
-        intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
-      },
-      {&intake}));
+  // Left trigger: enable intake rollers (deploy chain broken — no deploy
+  // command).
+  joystick.LeftTrigger(0.3).OnTrue(
+      frc2::cmd::RunOnce([this] { m_intakeOn = true; }));
 
   // Left bumper: stop rollers (deploy chain broken — no stow command).
-  joystick.LeftBumper().OnTrue(frc2::cmd::RunOnce(
-      [this] { intake.SetRollerState(IntakeSubsystem::RollerState::kIdle); },
-      {&intake}));
+  joystick.LeftBumper().OnTrue(
+      frc2::cmd::RunOnce([this] { m_intakeOn = false; }));
 
   // Run SysId routines when holding back/start and X/Y.
   // Note that each routine should be run exactly once in a single log.

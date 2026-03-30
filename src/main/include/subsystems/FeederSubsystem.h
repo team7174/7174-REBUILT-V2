@@ -17,8 +17,7 @@ class FeederSubsystem : public frc2::SubsystemBase {
   // ── States ────────────────────────────────────────────────────────────────
   enum class FeederState {
     kIdle,       // both motors stopped
-    kFeeding,    // feeder runs at setpoint; conveyor auto-enables once feeder
-                 // reaches kFeederReadyThresholdRPM
+    kFeeding,    // feeder and conveyor both run at setpoint immediately
     kOuttaking,  // both motors reversed to push balls back out
     kUnjamming   // auto-managed: reverse pulse, then resume previous state
   };

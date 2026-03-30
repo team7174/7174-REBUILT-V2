@@ -39,7 +39,7 @@ namespace AimConstants {
 constexpr units::meter_t kShooterXOffset = -5.75_in;  // 5.75 in behind center
 
 // Drivetrain heading tolerance to consider the robot "aimed"
-constexpr units::degree_t kHeadingTolerance = 2.0_deg;
+constexpr units::degree_t kHeadingTolerance = 3.0_deg;
 }  // namespace AimConstants
 
 namespace ShooterConstants {
@@ -71,7 +71,7 @@ constexpr double kFlywheelTargetRPS =
     60.0;  // 35.0 RPS — fallback only, interpolation map drives real shots
 
 // Robot is considered "at speed" when within this many RPS of the setpoint.
-constexpr double kFlywheelReadyToleranceRPS = 1.5;  // ±1.5 RPS (~±90 RPM)
+constexpr double kFlywheelReadyToleranceRPS = 3.0;  // ±3.0 RPS (~±180 RPM)
 
 // Idle speed — flywheel spins at this RPM when not actively shooting.
 // Keeps the flywheel warm so it only needs to gain ~200 RPM on trigger pull
@@ -100,7 +100,7 @@ constexpr double kFlywheelKI =
 
 // Flywheel must be within tolerance for this long before the feeder is allowed
 // to run. Prevents firing right as the wheel crosses the threshold.
-constexpr double kFlywheelStableSeconds = 0.3;
+constexpr double kFlywheelStableSeconds = 0.08;
 }  // namespace ShooterConstants
 
 namespace FeederConstants {
@@ -113,14 +113,15 @@ constexpr double kFeedRPM =
     8000.0;  // feeding forward — increased for more power
 constexpr double kOuttakeRPM = -3000.0;  // outtaking / unjamming
 
-// Feeder velocity threshold to auto-enable conveyor (RPM)
-constexpr double kFeederReadyThresholdRPM = 5500.0;
-
-// PID (velocity control, slot 0) — shared by both motors
-constexpr double kP = 0.05;
-constexpr double kI = 0.00005;
-constexpr double kD = 0.12;
-constexpr double kFF = 0.00012;  // kV for Neo Vortex
+// PID / FF (velocity control, slot 0) — shared by both motors
+// Neo Vortex free speed ~6784 RPM @ 12V → kFF = 1/6784 ≈ 0.0001474
+// kP must be large enough to arrest a ball-load dip quickly.
+//   A 500 RPM dip × kP 0.0003 = 0.15 duty-cycle correction — snappy recovery.
+// kD damps oscillation on spin-up; kI zeroed to avoid windup mid-burst.
+constexpr double kP = 0.0003;
+constexpr double kI = 0.0;
+constexpr double kD = 0.003;
+constexpr double kFF = 0.0001474;  // kV = 1 / (Neo Vortex free-speed RPM)
 
 // Unjam thresholds (shared for both motors)
 constexpr double kJamCurrentThreshold = 35.0;    // amps — current spike

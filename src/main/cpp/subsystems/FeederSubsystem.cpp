@@ -24,7 +24,7 @@ void FeederSubsystem::ConfigureMotors() {
   rev::spark::SparkFlexConfig feederConfig{};
 
   feederConfig.Inverted(true);  // invert so positive RPM = feed direction
-  feederConfig.SmartCurrentLimit(40, 20);
+  feederConfig.SmartCurrentLimit(60);  // 60A — enough headroom under ball load
   feederConfig.SetIdleMode(rev::spark::SparkBaseConfig::IdleMode::kCoast);
   feederConfig.VoltageCompensation(12.0);
 
@@ -40,7 +40,8 @@ void FeederSubsystem::ConfigureMotors() {
   rev::spark::SparkFlexConfig conveyorConfig{};
 
   conveyorConfig.Inverted(true);  // invert so positive RPM = feed direction
-  conveyorConfig.SmartCurrentLimit(40, 20);
+  conveyorConfig.SmartCurrentLimit(
+      60);  // 60A — enough headroom under ball load
   conveyorConfig.SetIdleMode(rev::spark::SparkBaseConfig::IdleMode::kCoast);
   conveyorConfig.VoltageCompensation(12.0);
 
@@ -69,11 +70,14 @@ void FeederSubsystem::SetState(FeederState state) {
 
   switch (m_state) {
     case FeederState::kFeeding:
-      // Feeder starts immediately; conveyor waits for feeder to reach speed
+      // Both feeder and conveyor start immediately together
       m_feederController.SetSetpoint(
           FeederConstants::kFeedRPM,
           rev::spark::SparkLowLevel::ControlType::kVelocity);
-      m_conveyorMotor.StopMotor();
+      m_conveyorController.SetSetpoint(
+          FeederConstants::kFeedRPM,
+          rev::spark::SparkLowLevel::ControlType::kVelocity);
+      m_conveyorActive = true;
       break;
 
     case FeederState::kOuttaking:
@@ -99,8 +103,9 @@ void FeederSubsystem::SetState(FeederState state) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 bool FeederSubsystem::IsFeederAtSpeed() {
+  // True when feeder is within 15% of the target feed RPM
   return m_feederMotor.GetEncoder().GetVelocity() >=
-         FeederConstants::kFeederReadyThresholdRPM;
+         FeederConstants::kFeedRPM * 0.85;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,16 +134,7 @@ bool FeederSubsystem::IsConveyorJammed() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void FeederSubsystem::Periodic() {
-  // ── 1. Auto-enable conveyor when feeder is up to speed ────────────────────
-  if (m_state == FeederState::kFeeding && !m_conveyorActive &&
-      IsFeederAtSpeed()) {
-    m_conveyorController.SetSetpoint(
-        FeederConstants::kFeedRPM,
-        rev::spark::SparkLowLevel::ControlType::kVelocity);
-    m_conveyorActive = true;
-  }
-
-  // ── 2. Jam detection (only while feeding or outtaking) ────────────────────
+  // ── 1. Jam detection (only while feeding or outtaking) ────────────────────
   if (m_state == FeederState::kFeeding || m_state == FeederState::kOuttaking) {
     // Feeder jam
     if (IsFeederJammed()) {
@@ -189,14 +185,14 @@ void FeederSubsystem::Periodic() {
     }
   }
 
-  // ── 3. Unjam pulse expiry → resume previous state ─────────────────────────
+  // ── 2. Unjam pulse expiry → resume previous state ─────────────────────────
   if (m_state == FeederState::kUnjamming &&
       m_unjamTimer.HasElapsed(
           units::second_t{FeederConstants::kUnjamDurationSec})) {
     SetState(m_stateBeforeUnjam);
   }
 
-  // ── 4. Telemetry ──────────────────────────────────────────────────────────
+  // ── 3. Telemetry ──────────────────────────────────────────────────────────
   frc::SmartDashboard::PutNumber("Feeder/FeederRPM",
                                  m_feederMotor.GetEncoder().GetVelocity());
   frc::SmartDashboard::PutNumber("Feeder/ConveyorRPM",
@@ -216,7 +212,7 @@ void FeederSubsystem::Periodic() {
                       : m_state == FeederState::kOuttaking ? "Outtaking"
                                                            : "Unjamming");
 
-  // ── 5. Live PID tuning ────────────────────────────────────────────────────
+  // ── 4. Live PID tuning ────────────────────────────────────────────────────
   UpdatePIDFromDashboard();
 }
 
