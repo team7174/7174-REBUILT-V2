@@ -4,36 +4,73 @@
 
 #pragma once
 
+#include <frc/Timer.h>
 #include <frc2/command/CommandPtr.h>
 #include <frc2/command/button/CommandXboxController.h>
-#include "subsystems/CommandSwerveDrivetrain.h"
+
 #include "Telemetry.h"
+#include "subsystems/AimSubsystem.h"
+#include "subsystems/AllianceShiftSubsystem.h"
+#include "subsystems/CommandSwerveDrivetrain.h"
+#include "subsystems/FeederSubsystem.h"
+#include "subsystems/IntakeSubsystem.h"
+#include "subsystems/ShooterSubsystem.h"
+#include "subsystems/VisionSubsystem.h"
 
 class RobotContainer {
-private:
-    units::meters_per_second_t MaxSpeed = 1.0 * TunerConstants::kSpeedAt12Volts; // kSpeedAt12Volts desired top speed
-    units::radians_per_second_t MaxAngularRate = 0.75_tps; // 3/4 of a rotation per second max angular velocity
+ private:
+  units::meters_per_second_t MaxSpeed =
+      1.0 *
+      TunerConstants::kSpeedAt12Volts;  // kSpeedAt12Volts desired top speed
+  units::radians_per_second_t MaxAngularRate =
+      0.75_tps;  // 3/4 of a rotation per second max angular velocity
 
-    /* Setting up bindings for necessary control of the swerve drive platform */
-    swerve::requests::FieldCentric drive = swerve::requests::FieldCentric{}
-        .WithDeadband(MaxSpeed * 0.1).WithRotationalDeadband(MaxAngularRate * 0.1) // Add a 10% deadband
-        .WithDriveRequestType(swerve::DriveRequestType::OpenLoopVoltage); // Use open-loop control for drive motors
-    swerve::requests::SwerveDriveBrake brake{};
-    swerve::requests::PointWheelsAt point{};
+  /* Setting up bindings for necessary control of the swerve drive platform */
+  swerve::requests::FieldCentric drive =
+      swerve::requests::FieldCentric{}
+          .WithDeadband(MaxSpeed * 0.1)
+          .WithRotationalDeadband(MaxAngularRate * 0.1)  // Add a 10% deadband
+          .WithDriveRequestType(
+              swerve::DriveRequestType::
+                  OpenLoopVoltage);  // Use open-loop control for drive motors
+  swerve::requests::SwerveDriveBrake brake{};
+  swerve::requests::PointWheelsAt point{};
 
-    /* Note: This must be constructed before the drivetrain, otherwise we need to
-     *       define a destructor to un-register the telemetry from the drivetrain */
-    Telemetry logger{MaxSpeed};
+  // Heading-locked drive for aiming: translates freely while keeping the
+  // robot heading locked to aim.robotHeading (back of robot faces the hub).
+  swerve::requests::FieldCentricFacingAngle aimDrive =
+      swerve::requests::FieldCentricFacingAngle{}
+          .WithDeadband(MaxSpeed * 0.1)
+          .WithDriveRequestType(swerve::DriveRequestType::OpenLoopVoltage)
+          .WithHeadingPID(8.0, 0.0, 0.75);  // TODO: tune heading PID
 
-    frc2::CommandXboxController joystick{0};
+  /* Note: This must be constructed before the drivetrain, otherwise we need to
+   *       define a destructor to un-register the telemetry from the drivetrain
+   */
+  Telemetry logger{MaxSpeed};
 
-public:
-    subsystems::CommandSwerveDrivetrain drivetrain{TunerConstants::CreateDrivetrain()};
+  frc2::CommandXboxController joystick{0};
 
-    RobotContainer();
+  // Timer used to oscillate the intake deploy angle when agitating
+  frc::Timer m_agitateTimer;
 
-    frc2::CommandPtr GetAutonomousCommand();
+  // Toggle state for left trigger intake roller on/off
+  bool m_intakeRollerOn = false;
 
-private:
-    void ConfigureBindings();
+ public:
+  subsystems::CommandSwerveDrivetrain drivetrain{
+      TunerConstants::CreateDrivetrain()};
+  AimSubsystem aim;
+  AllianceShiftSubsystem allianceShift;
+  FeederSubsystem feeder;
+  IntakeSubsystem intake;
+  ShooterSubsystem shooter;
+  VisionSubsystem vision;
+
+  RobotContainer();
+
+  frc2::CommandPtr GetAutonomousCommand();
+
+ private:
+  void ConfigureBindings();
 };
