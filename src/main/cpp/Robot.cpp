@@ -8,17 +8,7 @@
 #include <frc/DriverStation.h>
 #include <frc2/command/CommandScheduler.h>
 
-Robot::Robot() {
-  // Start WPILib data logging. Logs are written to /home/lvuser/logs/ on the
-  // roboRIO. Retrieve them with: VS Code → WPILib: Download Logs, or via SFTP.
-  frc::DataLogManager::Start();
-
-  // Mirror console output into the log so warnings appear in the .wpilog too.
-  frc::DataLogManager::LogConsoleOutput(true);
-
-  // Also log DS control/joystick data so it appears in the same log.
-  frc::DriverStation::StartDataLog(frc::DataLogManager::GetLog());
-}
+Robot::Robot() {}
 
 void Robot::RobotPeriodic() {
   m_timeAndJoystickReplay.Update();
@@ -43,7 +33,7 @@ void Robot::AutonomousInit() {
   m_autonomousCommand = m_container.GetAutonomousCommand();
 
   if (m_autonomousCommand) {
-    frc2::CommandScheduler::GetInstance().Schedule(m_autonomousCommand.value());
+    frc2::CommandScheduler::GetInstance().Schedule(m_autonomousCommand);
   }
 }
 
@@ -53,7 +43,7 @@ void Robot::AutonomousExit() {}
 
 void Robot::TeleopInit() {
   if (m_autonomousCommand) {
-    frc2::CommandScheduler::GetInstance().Cancel(m_autonomousCommand.value());
+    frc2::CommandScheduler::GetInstance().Cancel(m_autonomousCommand);
   }
 }
 

@@ -8,6 +8,7 @@
 #include <frc/smartdashboard/SmartDashboard.h>
 #include <frc2/command/Commands.h>
 #include <frc2/command/button/RobotModeTriggers.h>
+#include <pathplanner/lib/auto/AutoBuilder.h>
 
 #include <cmath>
 
@@ -19,6 +20,15 @@ RobotContainer::RobotContainer() {
   // IZone: only accumulate I-gain when heading error is within 5° (0.087 rad).
   // Prevents windup during large turns but still kills steady-state error.
   aimDrive.HeadingController.SetIZone(0.087);
+
+  // Configure PathPlanner AutoBuilder with this robot's swerve drivetrain.
+  // Must happen before buildAutoChooser() or any PathPlannerAuto is created.
+  drivetrain.ConfigureAutoBuilder();
+
+  // Populate the chooser with every auto found in deploy/pathplanner/autos/.
+  // Shows up on SmartDashboard / Shuffleboard under "Auto Chooser".
+  m_autoChooser = pathplanner::AutoBuilder::buildAutoChooser();
+  frc::SmartDashboard::PutData("Auto Chooser", &m_autoChooser);
 
   ConfigureBindings();
 }
@@ -216,21 +226,6 @@ void RobotContainer::ConfigureBindings() {
       [this](auto const& state) { logger.Telemeterize(state); });
 }
 
-frc2::CommandPtr RobotContainer::GetAutonomousCommand() {
-  // Simple drive forward auton
-  return frc2::cmd::Sequence(
-      // Reset our field centric heading to match the robot
-      // facing away from our alliance station wall (0 deg).
-      drivetrain.RunOnce(
-          [this] { drivetrain.SeedFieldCentric(frc::Rotation2d{0_deg}); }),
-      // Then slowly drive forward (away from us) for 5 seconds.
-      drivetrain
-          .ApplyRequest([this]() -> auto&& {
-            return drive.WithVelocityX(0.5_mps)
-                .WithVelocityY(0_mps)
-                .WithRotationalRate(0_tps);
-          })
-          .WithTimeout(5_s),
-      // Finally idle for the rest of auton
-      drivetrain.ApplyRequest([] { return swerve::requests::Idle{}; }));
+frc2::Command* RobotContainer::GetAutonomousCommand() {
+  return m_autoChooser.GetSelected();
 }

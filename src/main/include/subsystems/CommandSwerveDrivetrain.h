@@ -5,10 +5,12 @@
 #include <frc2/command/CommandPtr.h>
 #include <frc2/command/SubsystemBase.h>
 #include <frc2/command/sysid/SysIdRoutine.h>
+#include <pathplanner/lib/auto/AutoBuilder.h>
+#include <pathplanner/lib/config/RobotConfig.h>
+#include <pathplanner/lib/controllers/PPHolonomicDriveController.h>
 
 #include "ctre/phoenix6/SignalLogger.hpp"
 #include "generated/TunerConstants.h"
-
 
 using namespace ctre::phoenix6;
 
@@ -320,6 +322,42 @@ class CommandSwerveDrivetrain : public frc2::SubsystemBase,
    */
   void SeedHeadingFromVision(frc::Rotation2d rotation) {
     ResetRotation(rotation);
+  }
+
+  /**
+   * \brief Configures PathPlanner AutoBuilder for holonomic (swerve) drive.
+   *
+   * Must be called once after the drivetrain is constructed, before building
+   * any autos (e.g. at the end of RobotContainer's constructor).
+   */
+  void ConfigureAutoBuilder() {
+    auto config = pathplanner::RobotConfig::fromGUISettings();
+
+    pathplanner::AutoBuilder::configure(
+        // Pose supplier
+        [this]() { return GetState().Pose; },
+        // Reset pose
+        [this](const frc::Pose2d& pose) { ResetPose(pose); },
+        // Robot-relative ChassisSpeeds supplier
+        [this]() { return GetState().Speeds; },
+        // Robot-relative ChassisSpeeds consumer (feedforwards ignored here)
+        [this](const frc::ChassisSpeeds& speeds,
+               const pathplanner::DriveFeedforwards&) {
+          SetControl(swerve::requests::ApplyRobotSpeeds{}.WithSpeeds(speeds));
+        },
+        // Holonomic drive controller
+        std::make_shared<pathplanner::PPHolonomicDriveController>(
+            pathplanner::PIDConstants{5.0, 0.0, 0.0},   // Translation PID
+            pathplanner::PIDConstants{5.0, 0.0, 0.0}),  // Rotation PID
+        config,
+        // Flip path for Red alliance
+        []() {
+          auto alliance = frc::DriverStation::GetAlliance();
+          return alliance &&
+                 alliance.value() == frc::DriverStation::Alliance::kRed;
+        },
+        // Drive subsystem (requirement)
+        this);
   }
 
  private:

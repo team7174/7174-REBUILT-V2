@@ -5,8 +5,10 @@
 #pragma once
 
 #include <frc/Timer.h>
+#include <frc/smartdashboard/SendableChooser.h>
 #include <frc2/command/CommandPtr.h>
 #include <frc2/command/button/CommandXboxController.h>
+#include <pathplanner/lib/auto/AutoBuilder.h>
 
 #include "Telemetry.h"
 #include "subsystems/AimSubsystem.h"
@@ -60,6 +62,10 @@ class RobotContainer {
   // Whether intake is enabled (left trigger on, left bumper off)
   bool m_intakeOn = false;
 
+  // Auto chooser populated by PathPlanner — shown on
+  // SmartDashboard/Shuffleboard
+  frc::SendableChooser<frc2::Command*> m_autoChooser;
+
  public:
   subsystems::CommandSwerveDrivetrain drivetrain{
       TunerConstants::CreateDrivetrain()};
@@ -72,7 +78,7 @@ class RobotContainer {
 
   RobotContainer();
 
-  frc2::CommandPtr GetAutonomousCommand();
+  frc2::Command* GetAutonomousCommand();
 
  private:
   void ConfigureBindings();
