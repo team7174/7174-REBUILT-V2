@@ -92,6 +92,58 @@ void ShooterSubsystem::ConfigureMotors() {
   // exist yet)
   frc::SmartDashboard::SetDefaultNumber("Shooter/HoodTuneDeg",
                                         ShooterConstants::kHoodMinDegrees);
+
+  // ── Interpolation maps ────────────────────────────────────────────────────
+  // Key = distance from robot to hub centre (metres).
+  //
+  // Physics model
+  // ─────────────
+  // Shooter exit height:    17.5 in = 0.4445 m
+  // Hub upper-goal height:    ~8 ft = 2.438  m  (REBUILT 2026)
+  // Required Δh:                      1.993  m
+  //
+  // Front flywheel radius:  2.00 in = 0.05080 m
+  // Backspin wheel radius:  0.875in = 0.02223 m
+  // Avg contact radius:               0.03651 m
+  // Drivetrain efficiency η = 0.82   (firm 5.91-in foam, ~0.41-in compression)
+  // → v_exit = RPM × 0.001576 m/s
+  //
+  // Hood angle convention (IMPORTANT):
+  //   15° = STEEPEST  (most vertical, nearly straight up)
+  //   45° = FLATTEST  (most horizontal)
+  //   ballistic launch angle θ = 90° − hood°
+  //
+  // So CLOSE shots → LOW hood# (steep arc overhead into hub)
+  //    FAR shots   → HIGH hood# (flat fast trajectory)
+  //
+  // Formula: v = sqrt( g·d² / (2·cos²θ·(d·tanθ − Δh)) )
+  //          where θ = 90° − hood°
+  //
+  //  dist  │ hood │ θ_ballistic │  RPM
+  // ───────┼──────┼─────────────┼──────
+  //  2.0 m │  15° │     75°     │  1950
+  //  3.0 m │  22° │     68°     │  2020
+  //  4.0 m │  30° │     60°     │  2100  ← field-calibrated anchor
+  //  5.0 m │  36° │     54°     │  2180
+  //  6.0 m │  40° │     50°     │  2265
+  //  7.0 m │  43° │     47°     │  2300
+  //
+  // NOTE: physics-derived shape, field-calibrated at 4 m = 2100 RPM.
+  // Tune each knot on your actual field.
+
+  m_hoodAngleMap.insert(2.0, 15.0);
+  m_hoodAngleMap.insert(3.0, 22.0);
+  m_hoodAngleMap.insert(4.0, 30.0);
+  m_hoodAngleMap.insert(5.0, 36.0);
+  m_hoodAngleMap.insert(6.0, 40.0);
+  m_hoodAngleMap.insert(7.0, 43.0);
+
+  m_flywheelRPMMap.insert(2.0, 1950.0);
+  m_flywheelRPMMap.insert(3.0, 2020.0);
+  m_flywheelRPMMap.insert(4.0, 2100.0);
+  m_flywheelRPMMap.insert(5.0, 2180.0);
+  m_flywheelRPMMap.insert(6.0, 2265.0);
+  m_flywheelRPMMap.insert(7.0, 2300.0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,11 +161,37 @@ double ShooterSubsystem::GetHoodAngleDeg() const {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+void ShooterSubsystem::SetFlywheelRPM(double rpm) {
+  m_targetRPS = rpm / 60.0;
+  m_running = true;
+  m_flywheelLeader.SetControl(
+      m_velocityRequest.WithVelocity(units::turns_per_second_t{m_targetRPS}));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+double ShooterSubsystem::InterpolateHoodAngle(double distanceMeters) const {
+  return m_hoodAngleMap[distanceMeters];
+}
+
+double ShooterSubsystem::InterpolateFlywheelRPM(double distanceMeters) const {
+  return m_flywheelRPMMap[distanceMeters];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+void ShooterSubsystem::SetFromDistance(double distanceMeters) {
+  SetHoodAngle(InterpolateHoodAngle(distanceMeters));
+  SetFlywheelRPM(InterpolateFlywheelRPM(distanceMeters));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 void ShooterSubsystem::SetRunning(bool run) {
   m_running = run;
   if (m_running) {
-    m_flywheelLeader.SetControl(m_velocityRequest.WithVelocity(
-        units::turns_per_second_t{ShooterConstants::kFlywheelTargetRPS}));
+    m_flywheelLeader.SetControl(
+        m_velocityRequest.WithVelocity(units::turns_per_second_t{m_targetRPS}));
   } else {
     m_flywheelLeader.SetControl(controls::NeutralOut{});
     // Follower will coast automatically when leader is neutral
@@ -125,7 +203,7 @@ void ShooterSubsystem::SetRunning(bool run) {
 bool ShooterSubsystem::IsAtSpeed() {
   if (!m_running) return false;
   double velocity = m_flywheelLeader.GetVelocity().GetValueAsDouble();
-  double error = ShooterConstants::kFlywheelTargetRPS - velocity;
+  double error = m_targetRPS - velocity;
   return std::abs(error) <= ShooterConstants::kFlywheelReadyToleranceRPS;
 }
 
@@ -157,8 +235,8 @@ void ShooterSubsystem::Periodic() {
   frc::SmartDashboard::PutBoolean("Shooter/AtSpeed", atSpeed);
   frc::SmartDashboard::PutBoolean("Shooter/StableAtSpeed", IsStableAtSpeed());
   frc::SmartDashboard::PutBoolean("Shooter/Running", m_running);
-  frc::SmartDashboard::PutNumber("Shooter/TargetRPS",
-                                 ShooterConstants::kFlywheelTargetRPS);
+  frc::SmartDashboard::PutNumber("Shooter/TargetRPS", m_targetRPS);
+  frc::SmartDashboard::PutNumber("Shooter/TargetRPM", m_targetRPS * 60.0);
   frc::SmartDashboard::PutNumber(
       "Shooter/LeaderCurrentA",
       m_flywheelLeader.GetStatorCurrent().GetValueAsDouble());
@@ -175,4 +253,14 @@ void ShooterSubsystem::Periodic() {
   frc::SmartDashboard::PutBoolean(
       "Shooter/HoodAtTarget", std::abs(GetHoodAngleDeg() - m_targetHoodAngle) <=
                                   ShooterConstants::kHoodToleranceDeg);
+
+  // Publish current interpolation map contents for easy tuning visibility
+  frc::SmartDashboard::PutNumber("Shooter/Interp/HoodAt2m",
+                                 InterpolateHoodAngle(2.0));
+  frc::SmartDashboard::PutNumber("Shooter/Interp/RPMAt2m",
+                                 InterpolateFlywheelRPM(2.0));
+  frc::SmartDashboard::PutNumber("Shooter/Interp/HoodAt4m",
+                                 InterpolateHoodAngle(4.0));
+  frc::SmartDashboard::PutNumber("Shooter/Interp/RPMAt4m",
+                                 InterpolateFlywheelRPM(4.0));
 }

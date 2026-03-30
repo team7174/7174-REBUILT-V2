@@ -161,10 +161,11 @@ std::array<double, 3> VisionSubsystem::CalcStdDevs(int tagCount,
   constexpr double kReject = -1.0;  // sentinel: drop this measurement
 
   // ── Tier A: multiple tags visible ─────────────────────────────────────────
-  // Geometry is well-constrained — use the tightest stddev unconditionally.
+  // Geometry is well-constrained — use tight stddevs and trust rotation too.
   if (tagCount >= 2) {
     return {VisionConstants::kMultiTagXYStdDev,
-            VisionConstants::kMultiTagXYStdDev, VisionConstants::kRotStdDev};
+            VisionConstants::kMultiTagXYStdDev,
+            VisionConstants::kMultiTagRotStdDev};
   }
 
   // ── Tier B: single tag, large area, close to odometry ────────────────────

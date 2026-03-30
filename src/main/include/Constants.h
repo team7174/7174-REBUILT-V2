@@ -66,26 +66,28 @@ constexpr const char* kCANivoreName = "Chassis";
 
 // ── Flywheel (2× Kraken X60, IDs 24 & 34, CANivore, Phoenix Pro) ──────────
 // Target velocity in rotations-per-second (RPS) for VelocityVoltage control.
-constexpr double kFlywheelTargetRPS = 2500.0 / 60.0;  // 41.67 RPS
+constexpr double kFlywheelTargetRPS =
+    2100.0 /
+    60.0;  // 35.0 RPS — fallback only, interpolation map drives real shots
 
 // Robot is considered "at speed" when within this many RPS of the setpoint.
 constexpr double kFlywheelReadyToleranceRPS = 3.0;  // ±3 RPS (~±180 RPM)
 
 // Feed-forward gains for the Kraken X60 flywheel (slot 0, leader only).
-// With two motors the load per motor is halved → less back-EMF needed.
-// kV = 12V / 100 RPS (free speed) = 0.12; use slightly under so kP closes.
-// Feed-forward gains for the Kraken X60 flywheel (slot 0, leader only).
-// Using VelocityTorqueCurrentFOC — units are AMPS not volts, so gains differ.
-// kS: amps of torque current to overcome static friction
-// kV: amps per RPS of feedforward torque current
-// kA: amps per RPS² (leave 0)
-// kP: amps per RPS of error — small because kV carries most of the load
-// kI: amps per (RPS·second) — winds up slowly to kill steady-state error
+// Using VelocityTorqueCurrentFOC — units are AMPS not volts.
+// kS: amps to overcome static friction
+// kV: amps per RPS of steady-state feedforward torque current.
+//     Kraken X60 stall = ~366 A, free speed ~106 RPS → kV ≈ 366/106 ≈ 3.45.
+//     Two motors share the load so effective kV per motor ≈ 1.2–1.5.
+//     Set higher than theoretical so FF alone nearly holds speed under load.
+// kP: amps per RPS of error — must be large enough to arrest a ball-impact
+//     velocity dip (typically 10–15 RPS) within one or two control loops.
+// kI: small wind-up to kill any residual steady-state error.
 constexpr double kFlywheelKS = 1.5;
-constexpr double kFlywheelKV = 0.45;
+constexpr double kFlywheelKV = 1.2;  // was 0.45 — too low to hold under load
 constexpr double kFlywheelKA = 0.0;
-constexpr double kFlywheelKP = 2.0;
-constexpr double kFlywheelKI = 0.02;
+constexpr double kFlywheelKP = 6.0;   // was 2.0 — not aggressive enough on dip
+constexpr double kFlywheelKI = 0.05;  // was 0.02
 
 // Flywheel must be within tolerance for this long before the feeder is allowed
 // to run. Prevents firing right as the wheel crosses the threshold.
@@ -163,17 +165,18 @@ namespace VisionConstants {
 inline const std::string kLimelightName = "limelight-shooter";
 
 // ── Rotation stddev ────────────────────────────────────────────────────────
-// MT1 rotation is unreliable — pin it to a huge value so the pose estimator
-// ignores it and relies entirely on the gyro.
-constexpr double kRotStdDev = 9999.0;
+// With 2+ tags MT1 rotation is reliable — use a real stddev so the estimator
+// actually blends it. Single-tag rotation is still unreliable, pinned high.
+constexpr double kRotStdDev = 9999.0;       // single-tag: ignore rotation
+constexpr double kMultiTagRotStdDev = 5.0;  // multi-tag: trust rotation
 
-// ── Tiered XY stddevs (from 2024 logic, tuned for Limelight 4) ────────────
-// Tier A: 2+ tags → very confident
-constexpr double kMultiTagXYStdDev = 0.5;
+// ── Tiered XY stddevs ─────────────────────────────────────────────────────
+// Tier A: 2+ tags → tight constraint, update aggressively
+constexpr double kMultiTagXYStdDev = 0.1;
 // Tier B: 1 tag, large area (close + near odometry)
-constexpr double kCloseTagXYStdDev = 1.0;
+constexpr double kCloseTagXYStdDev = 0.7;
 // Tier C: 1 tag, medium area (farther but still near odometry)
-constexpr double kFarTagXYStdDev = 2.0;
+constexpr double kFarTagXYStdDev = 1.5;
 
 // ── Tier thresholds ────────────────────────────────────────────────────────
 // Minimum tag area (% of image) to consider a single-tag measurement
@@ -189,14 +192,11 @@ constexpr double kMaxAcceptedDistM = 8.0;    // reject if avg tag dist > 8 m
 constexpr double kAmbiguityThreshold = 0.3;  // reject if ambiguity > 0.3
 
 // ── Gyro heading seed from vision ─────────────────────────────────────────
-// When the robot sees 2+ tags with low ambiguity and is stationary, vision
-// can reliably seed the gyro heading directly from the MT1 rotation.
-constexpr double kHeadingSeedAmbiguityMax =
-    0.15;  // max ambiguity to allow seeding
-constexpr double kHeadingSeedMaxLinearSpeedMps =
-    0.05;  // robot must be nearly still (m/s)
-constexpr double kHeadingSeedMaxOmegaRadps =
-    0.05;  // robot must not be rotating (rad/s)
+// Seeds the gyro when 2+ tags are visible with decent ambiguity. Relaxed
+// speed threshold so it works during slow driving, not just when stopped.
+constexpr double kHeadingSeedAmbiguityMax = 0.25;      // was 0.15
+constexpr double kHeadingSeedMaxLinearSpeedMps = 0.5;  // was 0.05
+constexpr double kHeadingSeedMaxOmegaRadps = 0.3;      // was 0.05
 }  // namespace VisionConstants
 
 namespace ShiftConstants {

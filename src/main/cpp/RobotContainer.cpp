@@ -116,16 +116,9 @@ void RobotContainer::ConfigureBindings() {
                                             .WithTargetDirection(adjTarget));
                 }
               })
-              .AlongWith(frc2::cmd::RunOnce(
-                             [this] {
-                               shooter.SetRunning(true);
-                               double angle = frc::SmartDashboard::GetNumber(
-                                   "Shooter/HoodTuneDeg",
-                                   ShooterConstants::kHoodMinDegrees);
-                               shooter.SetHoodAngle(angle);
-                             },
-                             {&shooter})
-                             .AndThen(frc2::cmd::Idle({&shooter})))
+              .AlongWith(frc2::cmd::Run(
+                  [this] { shooter.SetFromDistance(aim.distance.value()); },
+                  {&shooter}))
               .AlongWith(frc2::cmd::Run(
                   [this] {
                     // Start the agitate timer on first loop

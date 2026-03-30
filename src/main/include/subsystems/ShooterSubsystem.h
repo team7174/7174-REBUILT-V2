@@ -7,6 +7,7 @@
 #include <frc/Timer.h>
 #include <frc2/command/SubsystemBase.h>
 #include <rev/SparkFlex.h>
+#include <wpi/interpolating_map.h>
 
 #include <ctre/phoenix6/TalonFX.hpp>
 
@@ -23,10 +24,15 @@
  * closed-loop control. ID 34 (kTopLeftShooterID) follows ID 24 inverted via
  * StrictFollower so both wheels spin the ball in the same direction.
  *
+ * Distance-based interpolation maps (keyed on distance in metres):
+ *   - Hood angle (degrees) → m_hoodAngleMap
+ *   - Flywheel speed (RPM)  → m_flywheelRPMMap
+ *
  * Usage:
- *   shooter.SetRunning(true);   // start spinning at kFlywheelTargetRPS
- *   shooter.SetRunning(false);  // coast to stop
- *   shooter.IsAtSpeed();        // true when within kFlywheelReadyToleranceRPS
+ *   shooter.SetRunning(true);               // start at kFlywheelTargetRPS
+ *   shooter.SetRunning(false);              // coast to stop
+ *   shooter.IsAtSpeed();                    // true within tolerance
+ *   shooter.SetFromDistance(distMeters);    // apply both maps at once
  */
 class ShooterSubsystem : public frc2::SubsystemBase {
  public:
@@ -34,12 +40,26 @@ class ShooterSubsystem : public frc2::SubsystemBase {
 
   void SetRunning(bool run);
 
+  /** Set flywheel target speed directly in RPM (converted to RPS internally).
+   */
+  void SetFlywheelRPM(double rpm);
+
   /** Move hood to target angle in degrees, clamped to
    * kHoodMinDegrees–kHoodMaxDegrees. */
   void SetHoodAngle(double degrees);
 
   /** Current hood angle in degrees as reported by the encoder. */
   double GetHoodAngleDeg() const;
+
+  /** Look up and apply both hood angle and flywheel RPM for a given distance
+   *  (metres) using the interpolation maps. */
+  void SetFromDistance(double distanceMeters);
+
+  /** Interpolated hood angle (degrees) for a given distance (metres). */
+  double InterpolateHoodAngle(double distanceMeters) const;
+
+  /** Interpolated flywheel speed (RPM) for a given distance (metres). */
+  double InterpolateFlywheelRPM(double distanceMeters) const;
 
   bool IsAtSpeed();
   double GetVelocityRPS();
@@ -68,6 +88,10 @@ class ShooterSubsystem : public frc2::SubsystemBase {
 
   bool m_running{false};
 
+  // Last commanded flywheel setpoint in RPS. Updated by both SetFlywheelRPM()
+  // and SetRunning(true) so IsAtSpeed() always checks the right target.
+  double m_targetRPS{ShooterConstants::kFlywheelTargetRPS};
+
   // Tracks how long the flywheel has been continuously within tolerance.
   // Feeder is only gated open after kFlywheelStableSeconds of being at speed.
   frc::Timer m_atSpeedTimer;
@@ -83,6 +107,12 @@ class ShooterSubsystem : public frc2::SubsystemBase {
   rev::spark::SparkRelativeEncoder m_hoodEncoder = m_hoodMotor.GetEncoder();
 
   double m_targetHoodAngle = ShooterConstants::kHoodMinDegrees;
+
+  // ── Interpolation maps (key = distance in metres) ─────────────────────────
+  // Populated in ConfigureMotors(). wpi::interpolating_map<K,V> performs linear
+  // interpolation between inserted key→value pairs and clamps at the endpoints.
+  wpi::interpolating_map<double, double> m_hoodAngleMap;    // metres → degrees
+  wpi::interpolating_map<double, double> m_flywheelRPMMap;  // metres → RPM
 
   void ConfigureMotors();
 };
