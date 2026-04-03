@@ -142,7 +142,7 @@ constexpr double kDeployGearRatio = 36.0 * (28.0 / 12.0);  // 84.0
 
 // Deploy positions (degrees at the pivot)
 constexpr double kDeployedAngleDeg = 0.0;    // down, starting position
-constexpr double kStowedAngleDeg = 90.0;     // up
+constexpr double kStowedAngleDeg = 110.0;    // up
 constexpr double kDeployToleranceDeg = 2.0;  // acceptable error
 
 // Deploy PID (position control, slot 0) — input/output in degrees
@@ -151,7 +151,7 @@ constexpr double kDeployI = 0.0;
 constexpr double kDeployD = 0.08;
 
 // Roller speeds (RPM)
-constexpr double kRollerIntakeRPM = 3000.0;    // intaking
+constexpr double kRollerIntakeRPM = 4000.0;    // intaking
 constexpr double kRollerEjectRPM = -3000.0;    // ejecting / unjamming
 constexpr double kRollerOuttakeRPM = -3000.0;  // outtaking (deploy stays down)
 

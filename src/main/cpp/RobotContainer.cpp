@@ -32,6 +32,7 @@ RobotContainer::RobotContainer() {
           .AndThen(frc2::cmd::RunOnce(
               [this] {
                 intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+                intake.SetDeployState(IntakeSubsystem::DeployState::kDeployed);
               },
               {&intake})));
 
@@ -55,7 +56,24 @@ RobotContainer::RobotContainer() {
           .AlongWith(frc2::cmd::Run(
               [this] { shooter.SetFromDistance(aim.distance.value()); },
               {&shooter}))
-          // 3. Feed only when aimed, at speed, and hood is ready
+          // 3. Agitate the intake to help move stuck balls
+          .AlongWith(frc2::cmd::Run(
+              [this] {
+                if (!m_agitateTimer.IsRunning()) {
+                  m_agitateTimer.Restart();
+                }
+
+                double elapsed = m_agitateTimer.Get().value();
+                bool isRaised =
+                    (static_cast<int>(elapsed / 0.4) % 2) == 1;
+
+                double targetAngleDeg =
+                    IntakeConstants::kDeployedAngleDeg +
+                    (isRaised ? 70.0 : 0.0);
+                intake.SetTargetAngleDeg(targetAngleDeg);
+              },
+              {&intake}))
+          // 4. Feed only when aimed, at speed, and hood is ready
           .AlongWith(frc2::cmd::Run(
               [this] {
                 bool aimed = aim.IsAimed();
@@ -77,6 +95,7 @@ RobotContainer::RobotContainer() {
                 shooter.SetRunning(false);
                 shooter.SetHoodAngle(ShooterConstants::kHoodMinDegrees);
                 feeder.SetState(FeederSubsystem::FeederState::kIdle);
+                m_agitateTimer.Stop();
               },
               {&shooter, &feeder})));
 
@@ -138,8 +157,10 @@ void RobotContainer::ConfigureBindings() {
         // Deploy motor disabled (chain broken) — do not command position
         if (m_intakeOn) {
           intake.SetRollerState(IntakeSubsystem::RollerState::kIntaking);
+          intake.SetDeployState(IntakeSubsystem::DeployState::kDeployed);
         } else {
           intake.SetRollerState(IntakeSubsystem::RollerState::kIdle);
+          intake.SetDeployState(IntakeSubsystem::DeployState::kStowed);
         }
       },
       {&intake}));
@@ -224,22 +245,29 @@ void RobotContainer::ConfigureBindings() {
                   {&shooter}))
               .AlongWith(frc2::cmd::Run(
                   [this] {
-                    // Rollers OFF while shooting
-                    intake.SetRollerState(IntakeSubsystem::RollerState::kIdle);
+                    // Only agitate when shooting at the hub, not when passing
+                    if (!aim.IsPassingMode()) {
+                      // Start the agitate timer on first loop
+                      if (!m_agitateTimer.IsRunning()) {
+                        m_agitateTimer.Restart();
+                      }
 
-                    // Start the agitate timer on first loop
-                    if (!m_agitateTimer.IsRunning()) {
-                      m_agitateTimer.Restart();
+                      // Oscillate deploy angle every 0.4 s (0.8 s full
+                      // cycle)
+                      double elapsed = m_agitateTimer.Get().value();
+                      bool isRaised =
+                          (static_cast<int>(elapsed / 0.4) % 2) == 1;
+
+                      double targetAngleDeg =
+                          IntakeConstants::kDeployedAngleDeg +
+                          (isRaised ? 70.0 : 0.0);
+                      intake.SetTargetAngleDeg(targetAngleDeg);
+                    } else {
+                      // Passing — hold deployed angle, no agitation
+                      m_agitateTimer.Stop();
+                      intake.SetTargetAngleDeg(
+                          IntakeConstants::kDeployedAngleDeg);
                     }
-
-                    // Oscillate deploy angle every 0.267 s (0.533 s full cycle)
-                    double elapsed = m_agitateTimer.Get().value();
-                    bool isRaised =
-                        (static_cast<int>(elapsed / 0.267) % 2) == 1;
-
-                    double targetAngleDeg = IntakeConstants::kDeployedAngleDeg +
-                                            (isRaised ? 110.0 : 0.0);
-                    intake.SetTargetAngleDeg(targetAngleDeg);
                   },
                   {&intake}))
               .AlongWith(frc2::cmd::Run(
@@ -294,14 +322,14 @@ void RobotContainer::ConfigureBindings() {
 
   // Run SysId routines when holding back/start and X/Y.
   // Note that each routine should be run exactly once in a single log.
-  (joystick.Back() && joystick.Y())
-      .WhileTrue(drivetrain.SysIdDynamic(frc2::sysid::Direction::kForward));
-  (joystick.Back() && joystick.X())
-      .WhileTrue(drivetrain.SysIdDynamic(frc2::sysid::Direction::kReverse));
-  (joystick.Start() && joystick.Y())
-      .WhileTrue(drivetrain.SysIdQuasistatic(frc2::sysid::Direction::kForward));
-  (joystick.Start() && joystick.X())
-      .WhileTrue(drivetrain.SysIdQuasistatic(frc2::sysid::Direction::kReverse));
+  // (joystick.Back() && joystick.Y())
+  //     .WhileTrue(drivetrain.SysIdDynamic(frc2::sysid::Direction::kForward));
+  // (joystick.Back() && joystick.X())
+  //     .WhileTrue(drivetrain.SysIdDynamic(frc2::sysid::Direction::kReverse));
+  // (joystick.Start() && joystick.Y())
+  //     .WhileTrue(drivetrain.SysIdQuasistatic(frc2::sysid::Direction::kForward));
+  // (joystick.Start() && joystick.X())
+  //     .WhileTrue(drivetrain.SysIdQuasistatic(frc2::sysid::Direction::kReverse));
 
   drivetrain.RegisterTelemetry(
       [this](auto const& state) { logger.Telemeterize(state); });

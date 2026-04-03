@@ -46,7 +46,7 @@ void IntakeSubsystem::ConfigureMotors() {
   deployConfig.closedLoop.SetFeedbackSensor(rev::spark::kPrimaryEncoder)
       .Pid(IntakeConstants::kDeployP, IntakeConstants::kDeployI,
            IntakeConstants::kDeployD)
-      .OutputRange(-0.6, 0.6);
+      .OutputRange(-0.8, 0.8);
 
   m_deployMotor.Configure(deployConfig, rev::ResetMode::kResetSafeParameters,
                           rev::PersistMode::kPersistParameters);
@@ -78,8 +78,8 @@ void IntakeSubsystem::SetDeployState(DeployState state) {
                          ? IntakeConstants::kStowedAngleDeg
                          : IntakeConstants::kDeployedAngleDeg;
   // TEMPORARILY DISABLED — intake deploy chain broken
-  // m_deployController.SetSetpoint(
-  //     m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
+  m_deployController.SetSetpoint(
+      m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
 }
 
 void IntakeSubsystem::SetTargetAngleDeg(double angleDeg) {
@@ -88,8 +88,8 @@ void IntakeSubsystem::SetTargetAngleDeg(double angleDeg) {
                         IntakeConstants::kStowedAngleDeg);
   m_targetAngleDeg = angleDeg;
   // TEMPORARILY DISABLED — intake deploy chain broken
-  // m_deployController.SetSetpoint(
-  //     m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
+  m_deployController.SetSetpoint(
+      m_targetAngleDeg, rev::spark::SparkLowLevel::ControlType::kPosition);
 }
 
 void IntakeSubsystem::SetRollerState(RollerState state) {
